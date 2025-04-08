@@ -21,6 +21,27 @@
             </div>
         </div>
 
+        <!-- Forex Currency Selector -->
+        <div class="mb-6">
+            <label for="forex-select" class="block text-sm font-medium mb-2">Select Forex Currency:</label>
+            <select id="forex-select" class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="usd">USD - U.S. Dollar</option>
+                <option value="eur">EUR - Euro</option>
+                <option value="jpy">JPY - Japanese Yen</option>
+                <option value="gbp">GBP - British Pound</option>
+                <option value="aud">AUD - Australian Dollar</option>
+                <option value="cad">CAD - Canadian Dollar</option>
+                <option value="chf">CHF - Swiss Franc</option>
+                <option value="cny">CNY - Chinese Yuan</option>
+                <option value="sek">SEK - Swedish Krona</option>
+                <option value="nzd">NZD - New Zealand Dollar</option>
+                <option value="sgd">SGD - Singapore Dollar</option>
+                <option value="hkd">HKD - Hong Kong Dollar</option>
+                <option value="krw">KRW - South Korean Won</option>
+                <option value="inr">INR - Indian Rupee</option>
+            </select>
+        </div>
+
         <!-- Search Bar for Market Section -->
         <div class="mb-6">
             <input type="text" id="search" placeholder="Search cryptocurrency..." 
@@ -35,7 +56,8 @@
                         <tr class="bg-gray-50 text-gray-500 text-left">
                             <th class="p-4">Rank</th>
                             <th class="p-4">Name</th>
-                            <th class="p-4 text-right">Price</th>
+                            <th class="p-4 text-right">Price (USD)</th>
+                            <th class="p-4 text-right">Price (Selected)</th>
                             <th class="p-4 text-right">24h %</th>
                         </tr>
                     </thead>
@@ -77,7 +99,10 @@
                 </div>
                 <div class="mt-6 pt-4 border-t border-gray-200">
                     <p class="text-lg font-semibold">
-                        Total Value: $<span id="total-value">0.00</span>
+                        Total Value (USD): $<span id="total-value-usd">0.00</span>
+                    </p>
+                    <p class="text-lg font-semibold">
+                        Total Value (Selected): <span id="total-value-selected">0.00</span> <span id="selected-currency-symbol"></span>
                     </p>
                 </div>
             </div>
@@ -89,20 +114,30 @@
         const apiUrl = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=30&page=1';
 
         let portfolio = JSON.parse(localStorage.getItem('cryptoPortfolio')) || [];
-        let cryptoData = [];
+        let cryptoData = []; // USD-based data
+        let forexData = []; // Selected currency-based data
         let filteredData = [];
         let filteredCoinsForSelect = [];
+        let selectedCurrency = localStorage.getItem('selectedForex') || 'usd'; // Load from local storage or default to USD
 
-        // Fetch and update market data
-        async function fetchMarketData() {
+        // Fetch and update market data with selected currency
+        async function fetchMarketData(currency = selectedCurrency) {
             try {
-                const response = await fetch(apiUrl);
-                cryptoData = await response.json();
-                filteredData = [...cryptoData];
-                filteredCoinsForSelect = [...cryptoData];
+                // Fetch USD data once
+                if (!cryptoData.length) {
+                    const usdResponse = await fetch(apiUrl);
+                    cryptoData = await usdResponse.json();
+                }
+                // Fetch selected currency data
+                const forexResponse = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=${currency}&order=market_cap_desc&per_page=30&page=1`);
+                forexData = await forexResponse.json();
+                filteredData = [...forexData];
+                filteredCoinsForSelect = [...forexData];
                 updateMarketDisplay();
                 updatePortfolioDisplay();
                 populateCoinDropdown();
+                document.getElementById('forex-select').value = currency; // Set the select value
+                document.getElementById('selected-currency-symbol').textContent = currency.toUpperCase();
             } catch (error) {
                 console.error('Error fetching market data:', error);
             }
@@ -114,6 +149,7 @@
             marketContainer.innerHTML = '';
             
             filteredData.forEach((coin, index) => {
+                const usdCoin = cryptoData.find(c => c.id === coin.id);
                 const changeClass = coin.price_change_percentage_24h >= 0 
                     ? 'text-green-500' 
                     : 'text-red-500';
@@ -128,7 +164,8 @@
                                 <p class="text-gray-500 text-sm">${coin.symbol.toUpperCase()}</p>
                             </div>
                         </td>
-                        <td class="p-4 text-right">$${coin.current_price.toLocaleString()}</td>
+                        <td class="p-4 text-right">$${usdCoin.current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="p-4 text-right">${coin.current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${selectedCurrency.toUpperCase()}</td>
                         <td class="p-4 text-right ${changeClass}">
                             ${coin.price_change_percentage_24h >= 0 ? '+' : ''}${coin.price_change_percentage_24h.toFixed(2)}%
                         </td>
@@ -166,7 +203,7 @@
         // Search functionality for market section
         document.getElementById('search').addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
-            filteredData = cryptoData.filter(coin => 
+            filteredData = forexData.filter(coin => 
                 coin.name.toLowerCase().includes(searchTerm) || 
                 coin.symbol.toLowerCase().includes(searchTerm)
             );
@@ -189,12 +226,20 @@
 
         coinSelectInput.addEventListener('input', (e) => {
             const searchTerm = e.target.value.toLowerCase();
-            filteredCoinsForSelect = cryptoData.filter(coin => 
+            filteredCoinsForSelect = forexData.filter(coin => 
                 coin.name.toLowerCase().includes(searchTerm) || 
                 coin.symbol.toLowerCase().includes(searchTerm)
             );
             populateCoinDropdown();
             coinDropdown.classList.remove('hidden');
+        });
+
+        // Forex currency change handler
+        document.getElementById('forex-select').addEventListener('change', (e) => {
+            selectedCurrency = e.target.value;
+            localStorage.setItem('selectedForex', selectedCurrency); // Save to local storage
+            document.getElementById('selected-currency-symbol').textContent = selectedCurrency.toUpperCase();
+            fetchMarketData(selectedCurrency); // Refetch data with new currency
         });
 
         // Tab switching
@@ -233,7 +278,7 @@
                 document.getElementById('amount').value = '';
                 document.getElementById('coin-select-input').value = '';
                 document.getElementById('coin-select-value').value = '';
-                filteredCoinsForSelect = [...cryptoData];
+                filteredCoinsForSelect = [...forexData];
                 populateCoinDropdown();
             }
         });
@@ -241,28 +286,34 @@
         // Update portfolio display
         function updatePortfolioDisplay() {
             const portfolioContainer = document.getElementById('portfolio');
-            const totalValueElement = document.getElementById('total-value');
+            const totalValueUSD = document.getElementById('total-value-usd');
+            const totalValueSelected = document.getElementById('total-value-selected');
             portfolioContainer.innerHTML = '';
             
-            let totalValue = 0;
+            let totalValueUSDValue = 0;
+            let totalValueSelectedValue = 0;
             
             portfolio.forEach((holding, index) => {
-                const coin = cryptoData.find(c => c.id === holding.coinId);
-                if (coin) {
-                    const value = coin.current_price * holding.amount;
-                    totalValue += value;
+                const coinUSD = cryptoData.find(c => c.id === holding.coinId);
+                const coinSelected = forexData.find(c => c.id === holding.coinId);
+                if (coinUSD && coinSelected) {
+                    const valueUSD = coinUSD.current_price * holding.amount;
+                    const valueSelected = coinSelected.current_price * holding.amount;
+                    totalValueUSDValue += valueUSD;
+                    totalValueSelectedValue += valueSelected;
                     
                     portfolioContainer.innerHTML += `
                         <div class="flex justify-between items-center py-2">
                             <div class="flex items-center space-x-2">
-                                <img src="${coin.image}" alt="${coin.name}" class="w-6 h-6">
+                                <img src="${coinUSD.image}" alt="${coinUSD.name}" class="w-6 h-6">
                                 <div>
-                                    <p class="font-semibold">${coin.name}</p>
-                                    <p class="text-gray-500 text-sm">${holding.amount} ${coin.symbol.toUpperCase()}</p>
+                                    <p class="font-semibold">${coinUSD.name}</p>
+                                    <p class="text-gray-500 text-sm">${holding.amount} ${coinUSD.symbol.toUpperCase()}</p>
                                 </div>
                             </div>
                             <div class="text-right">
-                                <p class="font-semibold">$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                <p>USD: $${valueUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                <p>${selectedCurrency.toUpperCase()}: ${valueSelected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                                 <button onclick="removeHolding(${index})" 
                                         class="text-red-500 hover:text-red-600 text-sm">
                                     Remove
@@ -273,7 +324,11 @@
                 }
             });
             
-            totalValueElement.textContent = totalValue.toLocaleString(undefined, { 
+            totalValueUSD.textContent = totalValueUSDValue.toLocaleString(undefined, { 
+                minimumFractionDigits: 2, 
+                maximumFractionDigits: 2 
+            });
+            totalValueSelected.textContent = totalValueSelectedValue.toLocaleString(undefined, { 
                 minimumFractionDigits: 2, 
                 maximumFractionDigits: 2 
             });
@@ -287,8 +342,8 @@
         }
 
         // Initial fetch and update every 30 seconds
-        fetchMarketData();
-        setInterval(fetchMarketData, 30000);
+        fetchMarketData(selectedCurrency);
+        setInterval(() => fetchMarketData(selectedCurrency), 30000);
     </script>
 </body>
 </html>
